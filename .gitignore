@@ -1,0 +1,33 @@
+# General
+.DS_Store
+*.swp
+*.swo
+*.tmp
+*.log
+
+# Java / Build outputs
+/build/
+/out/
+/bin/
+/classes/
+
+# Gradle
+/.gradle/
+gradle-app.setting
+
+# Fabric / Loom / Dev runtime
+/run/
+.mixin.out
+
+# IDEs
+.idea/
+*.iml
+.project
+.classpath
+.settings/
+.nb-gradle/
+.nb-cache/
+.vscode/
+
+# OS / Misc
+Thumbs.db
