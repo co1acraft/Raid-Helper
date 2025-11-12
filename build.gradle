@@ -1,0 +1,49 @@
+plugins {
+	id 'fabric-loom' version '1.7-SNAPSHOT'
+	id 'java'
+}
+
+group = 'com.example.raidaddon'
+def modVersionProp = project.findProperty('mod_version')
+version = (modVersionProp != null && !modVersionProp.toString().trim().isEmpty()) ? modVersionProp : '0.1.0'
+
+java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+
+repositories {
+	mavenCentral()
+	maven { url 'https://maven.meteordev.org/releases' }
+	maven { url 'https://maven.meteordev.org/snapshots' }
+	maven { url 'https://maven.fabricmc.net/' }
+}
+
+def minecraftVersion = project.findProperty('minecraft_version') ?: '1.21.8'
+def fabricLoaderVersion = project.findProperty('fabric_loader_version') ?: '0.16.7'
+def meteorVersion = project.findProperty('meteor_version') ?: '0.5.5'
+
+dependencies {
+	minecraft "com.mojang:minecraft:${minecraftVersion}"
+	// Prefer Yarn mappings when provided (requires Loom 1.7+ for latest unpick)
+	if (project.hasProperty('yarn_mappings')) {
+		mappings "net.fabricmc:yarn:${project.property('yarn_mappings')}:v2"
+	} else {
+		mappings loom.officialMojangMappings()
+	}
+	modImplementation("meteordevelopment:meteor-client:${meteorVersion}") {
+		// Prevent duplicate classes: Meteor shades MixinExtras and also declares it transitively.
+		exclude group: 'com.github.LlamaLad7.MixinExtras', module: 'mixinextras-fabric'
+	}
+	modImplementation "net.fabricmc:fabric-loader:${fabricLoaderVersion}"
+}
+
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+
+processResources {
+	inputs.property 'version', project.version
+	inputs.property 'minecraft_version', minecraftVersion
+	inputs.property 'fabric_loader_version', fabricLoaderVersion
+	filesMatching('fabric.mod.json') {
+		expand version: project.version, minecraft_version: minecraftVersion, fabric_loader_version: fabricLoaderVersion
+	}
+}
+
+jar { from("LICENSE") { rename { "${it}_${project.archivesBaseName}" } } }

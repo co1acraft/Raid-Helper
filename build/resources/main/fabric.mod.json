@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "meteor_raid_addon",
+  "version": "1.5.2-1.21.8",
+  "name": "Meteor Raid Addon",
+  "description": "Automatically toggles combat/utility modules and consumes an Ominous Bottle after raid victory.",
+  "authors": ["You"],
+  "contact": {},
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "meteor": ["com.example.raidaddon.RaidHelperAddon"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.7",
+    "minecraft": "1.21.8",
+    "java": ">=17",
+    "meteor-client": "*"
+  },
+  "mixins": [],
+  "custom": {
+    "modmenu": {
+      "parent": "meteor-client"
+    }
+  }
+}
