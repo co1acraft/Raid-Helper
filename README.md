@@ -2,10 +2,15 @@
 
 [![Build](https://github.com/co1acraft/ad/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/co1acraft/ad/actions/workflows/build.yml)
 
-An addon for the Meteor Client that:
-1. Enables KillAura (configured to attack monsters only) on load.
-2. Enables AutoEat and AutoTotem on load.
-3. After a raid victory (detected via Hero of the Village effect), waits ~1s and attempts to drink an Ominous Bottle automatically.
+A Meteor Client addon that automates post-raid actions and enables helpful combat/survival modules.
+
+**Features:**
+- **Auto-enable modules:** Optionally enables KillAura (monsters only) and AutoEat when the addon activates.
+- **Flexible raid detection:** Triggers on Hero of the Village effect (rising edge), raid bossbar disappearance, or victory keywords in bossbar text.
+- **Automatic Ominous Bottle drinking:** After raid victory, automatically drinks an Ominous Bottle with configurable delay, persistent retry logic, and forced right-click hold to ensure full consumption.
+- **Smart Raid Omen handling:** Stops attempting to drink if Raid Omen is already active (configurable).
+- **Hotbar restore:** Automatically switches back to your previous hotbar slot after a successful drink.
+- **Debug logging:** All chat announcements are gated behind a debug-logs setting for silent operation.
 
 ### Building
 
@@ -36,6 +41,26 @@ git tag v0.1.1
 git push origin v0.1.1
 ```
 
+### Configuration
+
+The addon adds a **Raid Helper** module under the **Misc** category in Meteor Client. All features are configurable via module settings:
+
+**Module Settings:**
+- `auto-enable-killaura` (default: true) — Enable KillAura on module activation
+- `auto-enable-autoeat` (default: true) — Enable AutoEat on module activation
+- `drink-ominous-bottle` (default: true) — Automatically drink Ominous Bottle after raid victory
+- `trigger-on-hero-effect` (default: true) — Trigger on Hero of the Village rising edge
+- `trigger-on-raid-bossbar-end` (default: true) — Trigger when raid bossbar disappears or shows victory
+- `post-raid-delay-ticks` (default: 20) — Delay in ticks before drinking
+- `require-hero-with-victory` (default: true) — Require Hero effect when using bossbar triggers (strict mode)
+- `victory-keywords` (default: "victory, won") — Comma-separated keywords for bossbar victory detection
+- `retry-drink` (default: true) — Retry starting the drink until animation begins
+- `max-drink-attempt-ticks` (default: 40) — Maximum ticks to retry initiating bottle use
+- `retry-attempt-interval-ticks` (default: 5) — Ticks to wait between each retry attempt
+- `force-hold-use` (default: true) — Force holding right-click while drinking to ensure completion
+- `stop-when-has-raid-omen` (default: true) — Stop attempting to drink if Raid Omen is already active
+- `debug-logs` (default: false) — Enable chat announcements for trigger events and drinking progress
+
 ### Version Configuration
 
 Adjust `gradle.properties` for (current target 1.21.8):
@@ -60,9 +85,11 @@ Place the built addon jar inside your `.minecraft/mods` folder alongside the Met
 
 ### Notes
 
-- If KillAura setting field names differ between Meteor versions you may need to adapt the code in `RaidHelperAddon.java` (players/animals/monsters toggles).
-- Ominous Bottle interaction relies on standard right-click; ensure item exists in inventory.
-- Raid detection uses presence of the Hero of the Village status effect; adjust logic if you need more precise server-side raid state checks.
+- **Module location:** Find "Raid Helper" under the Misc category in Meteor Client.
+- **Raid detection:** Multiple trigger methods (Hero effect, bossbar disappearance, victory keywords) ensure reliable detection across server configurations.
+- **Drinking reliability:** Persistent retry logic with configurable intervals and forced key hold ensures bottles are fully consumed even under lag or timing issues.
+- **Hotbar restore:** After a successful drink when Raid Omen is active, automatically switches back to your previous hotbar slot.
+- **Silent operation:** All chat messages are gated behind `debug-logs` setting — enable only when troubleshooting.
 
 ### Disclaimer
 
