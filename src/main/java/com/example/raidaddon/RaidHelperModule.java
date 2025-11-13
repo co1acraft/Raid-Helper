@@ -473,24 +473,31 @@ public class RaidHelperModule extends Module {
         if (forceHoldUse && mc.options != null && mc.options.useKey != null) {
             mc.options.useKey.setPressed(prevUseKeyPressed);
         }
-        // Restore hotbar slot based on user preference.
-        if (success && mc.player != null && mc.player.getInventory() != null) {
+        // Restore hotbar slot based on user preference (both on success and abort).
+        if (mc.player != null && mc.player.getInventory() != null) {
+            int targetSlot = -1;
             switch (slotRestoreMode.get()) {
                 case Previous:
                     if (prevSelectedHotbarSlot >= 0 && prevSelectedHotbarSlot <= 8) {
-                        mc.player.getInventory().setSelectedSlot(prevSelectedHotbarSlot);
+                        targetSlot = prevSelectedHotbarSlot;
                     }
                     break;
                 case Specific:
                     // targetHotbarSlot is 1-9, convert to 0-8
-                    int slot = targetHotbarSlot.get() - 1;
-                    if (slot >= 0 && slot <= 8) {
-                        mc.player.getInventory().setSelectedSlot(slot);
+                    int s = targetHotbarSlot.get() - 1;
+                    if (s >= 0 && s <= 8) {
+                        targetSlot = s;
                     }
                     break;
                 case None:
                     // Do not restore slot
                     break;
+            }
+            if (targetSlot >= 0) {
+                mc.player.getInventory().setSelectedSlot(targetSlot);
+                if (debugLogs.get()) {
+                    announceClient("Restored hotbar slot to " + (targetSlot + 1) + " (" + (success ? "success" : "abort") + ")");
+                }
             }
         }
         drinking = false;
