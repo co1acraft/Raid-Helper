@@ -2,6 +2,7 @@ package com.example.raidaddon;
 
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.BoolSetting;
+import meteordevelopment.meteorclient.settings.EnumSetting;
 import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
@@ -112,6 +113,28 @@ public class RaidHelperModule extends Module {
         .description("Stop attempting to drink if Raid Omen (Bad Omen) effect is already active.")
         .defaultValue(true)
         .build());
+
+    private final Setting<SlotRestoreMode> slotRestoreMode = sgGeneral.add(new EnumSetting.Builder<SlotRestoreMode>()
+        .name("slot-restore-mode")
+        .description("How to restore hotbar slot after drinking: Previous (before bottle), Specific slot, or None.")
+        .defaultValue(SlotRestoreMode.Previous)
+        .build());
+
+    private final Setting<Integer> targetHotbarSlot = sgGeneral.add(new IntSetting.Builder()
+        .name("target-hotbar-slot")
+        .description("Hotbar slot to switch to after drinking (1-9, only used when mode is Specific).")
+        .defaultValue(1)
+        .min(1)
+        .max(9)
+        .sliderMax(9)
+        .visible(() -> slotRestoreMode.get() == SlotRestoreMode.Specific)
+        .build());
+
+    public enum SlotRestoreMode {
+        Previous,
+        Specific,
+        None
+    }
 
     private Boolean hadHeroEffect = null;
     private Boolean hadRaidBossBar = null;
@@ -382,10 +405,24 @@ public class RaidHelperModule extends Module {
         if (forceHoldUse && mc.options != null && mc.options.useKey != null) {
             mc.options.useKey.setPressed(prevUseKeyPressed);
         }
-        // If we successfully drank and now have Raid Omen, switch back to previous hotbar slot.
-        if (success && mc.player != null && mc.player.getInventory() != null && prevSelectedHotbarSlot >= 0) {
-            if (hasRaidOmen()) {
-                mc.player.getInventory().setSelectedSlot(prevSelectedHotbarSlot);
+        // Restore hotbar slot based on user preference.
+        if (success && mc.player != null && mc.player.getInventory() != null) {
+            switch (slotRestoreMode.get()) {
+                case Previous:
+                    if (prevSelectedHotbarSlot >= 0 && prevSelectedHotbarSlot <= 8) {
+                        mc.player.getInventory().setSelectedSlot(prevSelectedHotbarSlot);
+                    }
+                    break;
+                case Specific:
+                    // targetHotbarSlot is 1-9, convert to 0-8
+                    int slot = targetHotbarSlot.get() - 1;
+                    if (slot >= 0 && slot <= 8) {
+                        mc.player.getInventory().setSelectedSlot(slot);
+                    }
+                    break;
+                case None:
+                    // Do not restore slot
+                    break;
             }
         }
         drinking = false;
