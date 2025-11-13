@@ -114,10 +114,10 @@ public class RaidHelperModule extends Module {
         .defaultValue(true)
         .build());
 
-    private final Setting<Boolean> switchOnRaidOmen = sgGeneral.add(new BoolSetting.Builder()
+    private final Setting<RaidOmenSwitchMode> switchOnRaidOmen = sgGeneral.add(new EnumSetting.Builder<RaidOmenSwitchMode>()
         .name("switch-on-raid-omen")
-        .description("When enabled, switch hotbar immediately when you gain the Raid Omen effect.")
-        .defaultValue(false)
+        .description("How to handle hotbar switching when Raid Omen is present: Off, OnceOnGain (rising edge only), or Continuous (every tick while active).")
+        .defaultValue(RaidOmenSwitchMode.Off)
         .build());
 
     private final Setting<SlotRestoreMode> slotRestoreMode = sgGeneral.add(new EnumSetting.Builder<SlotRestoreMode>()
@@ -140,6 +140,12 @@ public class RaidHelperModule extends Module {
         Previous,
         Specific,
         None
+    }
+
+    public enum RaidOmenSwitchMode {
+        Off,
+        OnceOnGain,
+        Continuous
     }
 
     private Boolean hadHeroEffect = null;
@@ -221,25 +227,56 @@ public class RaidHelperModule extends Module {
             return;
         }
 
-        // Handle switching hotbar on Raid Omen rising edge if enabled
-        if (switchOnRaidOmen.get() && hasRaidOmen && !hadRaidOmen) {
-            if (mc.player != null && mc.player.getInventory() != null) {
+        // Handle switching hotbar based on Raid Omen mode
+        RaidOmenSwitchMode omenMode = switchOnRaidOmen.get();
+        if (omenMode != RaidOmenSwitchMode.Off && hasRaidOmen) {
+            boolean shouldSwitch = false;
+            if (omenMode == RaidOmenSwitchMode.OnceOnGain && !hadRaidOmen) {
+                shouldSwitch = true;
+            } else if (omenMode == RaidOmenSwitchMode.Continuous) {
+                shouldSwitch = true;
+            }
+
+            if (shouldSwitch && mc.player != null && mc.player.getInventory() != null) {
+                int targetSlot = -1;
                 switch (slotRestoreMode.get()) {
                     case Previous:
                         if (prevSelectedHotbarSlot >= 0 && prevSelectedHotbarSlot <= 8) {
-                            mc.player.getInventory().setSelectedSlot(prevSelectedHotbarSlot);
-                            if (debugLogs.get()) announceClient("Switched to previous hotbar slot due to Raid Omen: " + (prevSelectedHotbarSlot + 1));
+                            targetSlot = prevSelectedHotbarSlot;
                         }
                         break;
                     case Specific:
                         int s = targetHotbarSlot.get() - 1;
                         if (s >= 0 && s <= 8) {
-                            mc.player.getInventory().setSelectedSlot(s);
-                            if (debugLogs.get()) announceClient("Switched to specific hotbar slot due to Raid Omen: " + (s + 1));
+                            targetSlot = s;
                         }
                         break;
                     case None:
                         break;
+                }
+                if (targetSlot >= 0) {
+                    try {
+                        int currentSlot = mc.player.getInventory().getSelectedSlot();
+                        if (currentSlot != targetSlot) {
+                            mc.player.getInventory().setSelectedSlot(targetSlot);
+                            if (debugLogs.get() && omenMode == RaidOmenSwitchMode.OnceOnGain) {
+                                announceClient("Switched to slot " + (targetSlot + 1) + " due to Raid Omen gain.");
+                            }
+                        }
+                    } catch (Throwable ignored) {
+                        // Fallback: use reflection to read selectedSlot
+                        try {
+                            java.lang.reflect.Field f = mc.player.getInventory().getClass().getDeclaredField("selectedSlot");
+                            f.setAccessible(true);
+                            Object v = f.get(mc.player.getInventory());
+                            if (v instanceof Integer currentSlot && currentSlot != targetSlot) {
+                                mc.player.getInventory().setSelectedSlot(targetSlot);
+                                if (debugLogs.get() && omenMode == RaidOmenSwitchMode.OnceOnGain) {
+                                    announceClient("Switched to slot " + (targetSlot + 1) + " due to Raid Omen gain.");
+                                }
+                            }
+                        } catch (Throwable ignored2) {}
+                    }
                 }
             }
         }
