@@ -114,6 +114,12 @@ public class RaidHelperModule extends Module {
         .defaultValue(true)
         .build());
 
+    private final Setting<Boolean> switchOnRaidOmen = sgGeneral.add(new BoolSetting.Builder()
+        .name("switch-on-raid-omen")
+        .description("When enabled, switch hotbar immediately when you gain the Raid Omen effect.")
+        .defaultValue(false)
+        .build());
+
     private final Setting<SlotRestoreMode> slotRestoreMode = sgGeneral.add(new EnumSetting.Builder<SlotRestoreMode>()
         .name("slot-restore-mode")
         .description("How to restore hotbar slot after drinking: Previous (before bottle), Specific slot, or None.")
@@ -138,6 +144,7 @@ public class RaidHelperModule extends Module {
 
     private Boolean hadHeroEffect = null;
     private Boolean hadRaidBossBar = null;
+    private Boolean hadRaidOmen = null;
     private boolean announcedVictory = false;
     private boolean raidJustFinished = false;
     private int postRaidTickCooldown = 0;
@@ -207,10 +214,34 @@ public class RaidHelperModule extends Module {
         boolean hasRaidBossBar = bossBars.stream().anyMatch(b -> safeTitle(b).toLowerCase().contains("raid"));
         boolean hasRaidVictory = hasRaidVictoryInBossBar(bossBars);
 
-        if (hadHeroEffect == null || hadRaidBossBar == null) {
+        if (hadHeroEffect == null || hadRaidBossBar == null || hadRaidOmen == null) {
             hadHeroEffect = hasHeroEffect;
             hadRaidBossBar = hasRaidBossBar;
+            hadRaidOmen = hasRaidOmen;
             return;
+        }
+
+        // Handle switching hotbar on Raid Omen rising edge if enabled
+        if (switchOnRaidOmen.get() && hasRaidOmen && !hadRaidOmen) {
+            if (mc.player != null && mc.player.getInventory() != null) {
+                switch (slotRestoreMode.get()) {
+                    case Previous:
+                        if (prevSelectedHotbarSlot >= 0 && prevSelectedHotbarSlot <= 8) {
+                            mc.player.getInventory().setSelectedSlot(prevSelectedHotbarSlot);
+                            if (debugLogs.get()) announceClient("Switched to previous hotbar slot due to Raid Omen: " + (prevSelectedHotbarSlot + 1));
+                        }
+                        break;
+                    case Specific:
+                        int s = targetHotbarSlot.get() - 1;
+                        if (s >= 0 && s <= 8) {
+                            mc.player.getInventory().setSelectedSlot(s);
+                            if (debugLogs.get()) announceClient("Switched to specific hotbar slot due to Raid Omen: " + (s + 1));
+                        }
+                        break;
+                    case None:
+                        break;
+                }
+            }
         }
 
         if (triggerOnHeroEffect.get() && hasHeroEffect && !hadHeroEffect && !raidJustFinished) {
