@@ -93,6 +93,26 @@ public class RaidHelperModule extends Module {
         .sliderMax(100)
         .build());
 
+    private final Setting<Integer> retryAttemptIntervalTicks = sgGeneral.add(new IntSetting.Builder()
+        .name("retry-attempt-interval-ticks")
+        .description("Ticks to wait between each retry attempt while starting the drink.")
+        .defaultValue(5)
+        .min(1)
+        .sliderMax(40)
+        .build());
+
+    private final Setting<Boolean> forceHoldUseSetting = sgGeneral.add(new BoolSetting.Builder()
+        .name("force-hold-use")
+        .description("Force holding right-click (use key) while drinking to ensure completion.")
+        .defaultValue(true)
+        .build());
+
+    private final Setting<Boolean> stopWhenHasRaidOmen = sgGeneral.add(new BoolSetting.Builder()
+        .name("stop-when-has-raid-omen")
+        .description("Stop attempting to drink if Raid Omen (Bad Omen) effect is already active.")
+        .defaultValue(true)
+        .build());
+
     private Boolean hadHeroEffect = null;
     private Boolean hadRaidBossBar = null;
     private boolean announcedVictory = false;
@@ -102,6 +122,11 @@ public class RaidHelperModule extends Module {
     private boolean drinking = false;
     private int drinkAttemptTicks = 0;
     private int drinkProgressTicks = 0;
+    private int retryAttemptCooldown = 0;
+    private boolean forceHoldUse = false;
+    private boolean prevUseKeyPressed = false;
+    private boolean announcedOmenSkip = false;
+    private int prevSelectedHotbarSlot = -1;
 
     public RaidHelperModule() {
         super(Categories.Misc, "Raid Helper", "Assists after raids and enables helpful modules.");
@@ -125,6 +150,11 @@ public class RaidHelperModule extends Module {
         drinking = false;
         drinkAttemptTicks = 0;
         drinkProgressTicks = 0;
+        retryAttemptCooldown = 0;
+        forceHoldUse = false;
+        prevUseKeyPressed = false;
+        announcedOmenSkip = false;
+        prevSelectedHotbarSlot = -1;
     }
 
     @EventHandler
@@ -134,6 +164,22 @@ public class RaidHelperModule extends Module {
         if (mc.world == null || mc.player == null) return;
 
         boolean hasHeroEffect = mc.player.hasStatusEffect(net.minecraft.entity.effect.StatusEffects.HERO_OF_THE_VILLAGE);
+        boolean hasRaidOmen = hasRaidOmen();
+        // If Raid Omen is already active, don't attempt to drink. Abort any ongoing drink.
+        if (stopWhenHasRaidOmen.get() && hasRaidOmen) {
+            if (!announcedOmenSkip) {
+                announceClient("Raid Omen active — skipping bottle drinking.");
+                announcedOmenSkip = true;
+            }
+            if (drinking) abortDrink("Raid Omen already active");
+            raidJustFinished = false;
+            postRaidTickCooldown = 0;
+            return;
+        } else {
+            // Reset once effect is gone so we can notify next time it returns
+            announcedOmenSkip = false;
+        }
+
         java.util.List<net.minecraft.client.gui.hud.ClientBossBar> bossBars = getClientBossBars();
         boolean hasRaidBossBar = bossBars.stream().anyMatch(b -> safeTitle(b).toLowerCase().contains("raid"));
         boolean hasRaidVictory = hasRaidVictoryInBossBar(bossBars);
@@ -173,14 +219,32 @@ public class RaidHelperModule extends Module {
         if (raidJustFinished && !drinking && postRaidTickCooldown-- <= 0) {
             int slot = findOminousBottleHotbarSlot();
             if (slot != -1 && mc.player != null && mc.interactionManager != null) {
+                // Remember previous selection before switching to the bottle.
+                try {
+                    prevSelectedHotbarSlot = mc.player.getInventory().getSelectedSlot();
+                } catch (Throwable ignored) {
+                    // Fallback: try reflective access to 'selectedSlot' field
+                    try {
+                        java.lang.reflect.Field f = mc.player.getInventory().getClass().getDeclaredField("selectedSlot");
+                        f.setAccessible(true);
+                        Object v = f.get(mc.player.getInventory());
+                        if (v instanceof Integer i) prevSelectedHotbarSlot = i;
+                    } catch (Throwable ignored2) { prevSelectedHotbarSlot = -1; }
+                }
                 mc.player.getInventory().setSelectedSlot(slot);
                 mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
                 drinking = true;
                 drinkAttemptTicks = 0;
                 drinkProgressTicks = 0;
+                retryAttemptCooldown = 0;
+                if (forceHoldUseSetting.get() && mc.options != null && mc.options.useKey != null) {
+                    prevUseKeyPressed = mc.options.useKey.isPressed();
+                    mc.options.useKey.setPressed(true);
+                    forceHoldUse = true;
+                }
                 if (debugLogs.get()) announceClient("Drink attempt started (slot=" + slot + ")");
             } else {
-                finishDrink();
+                finishDrink(false);
             }
         }
 
@@ -191,21 +255,28 @@ public class RaidHelperModule extends Module {
 
             if (usingBottle) {
                 drinkProgressTicks++;
+                if (forceHoldUseSetting.get() && forceHoldUse && mc.options != null && mc.options.useKey != null) {
+                    // Reinforce hold every tick to avoid release.
+                    mc.options.useKey.setPressed(true);
+                }
                 if (debugLogs.get() && drinkProgressTicks % 10 == 0) announceClient("Drinking progress=" + drinkProgressTicks);
                 if (drinkProgressTicks >= 34 && !mc.player.isUsingItem()) {
                     announceClient("Ominous Bottle drink completed.");
-                    finishDrink();
+                    finishDrink(true);
                 }
             } else {
                 if (drinkProgressTicks == 0 && retryDrink.get() && drinkAttemptTicks < maxDrinkAttemptTicks.get()) {
-                    int slot = findOminousBottleHotbarSlot();
-                    if (slot != -1) {
-                        mc.player.getInventory().setSelectedSlot(slot);
-                        mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
-                        drinkAttemptTicks++;
-                        if (debugLogs.get() && drinkAttemptTicks % 5 == 0) announceClient("Retry drink attempt=" + drinkAttemptTicks);
-                    } else {
-                        abortDrink("bottle missing");
+                    if (retryAttemptCooldown-- <= 0) {
+                        int slot = findOminousBottleHotbarSlot();
+                        if (slot != -1) {
+                            mc.player.getInventory().setSelectedSlot(slot);
+                            mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
+                            drinkAttemptTicks++;
+                            retryAttemptCooldown = retryAttemptIntervalTicks.get();
+                            if (debugLogs.get()) announceClient("Retry drink attempt=" + drinkAttemptTicks + " (interval=" + retryAttemptIntervalTicks.get() + ")");
+                        } else {
+                            abortDrink("bottle missing");
+                        }
                     }
                 } else {
                     if (drinkProgressTicks > 0) {
@@ -213,7 +284,7 @@ public class RaidHelperModule extends Module {
                     } else if (retryDrink.get()) {
                         announceClient("Failed to begin drinking after attempts=" + drinkAttemptTicks);
                     }
-                    finishDrink();
+                    finishDrink(false);
                 }
             }
         }
@@ -292,6 +363,7 @@ public class RaidHelperModule extends Module {
     }
 
     private void announceClient(String message) {
+        if (!debugLogs.get()) return;
         if (mc.inGameHud != null) {
             try {
                 mc.inGameHud.getChatHud().addMessage(Text.literal("[Raid Helper] " + message));
@@ -302,14 +374,50 @@ public class RaidHelperModule extends Module {
 
     private void abortDrink(String reason) {
         if (debugLogs.get()) announceClient("Drink aborted: " + reason);
-        finishDrink();
+        finishDrink(false);
     }
 
-    private void finishDrink() {
+    private void finishDrink(boolean success) {
+        // Release forced hold if we were holding.
+        if (forceHoldUse && mc.options != null && mc.options.useKey != null) {
+            mc.options.useKey.setPressed(prevUseKeyPressed);
+        }
+        // If we successfully drank and now have Raid Omen, switch back to previous hotbar slot.
+        if (success && mc.player != null && mc.player.getInventory() != null && prevSelectedHotbarSlot >= 0) {
+            if (hasRaidOmen()) {
+                mc.player.getInventory().setSelectedSlot(prevSelectedHotbarSlot);
+            }
+        }
         drinking = false;
         raidJustFinished = false;
         announcedVictory = false;
         drinkAttemptTicks = 0;
         drinkProgressTicks = 0;
+        retryAttemptCooldown = 0;
+        forceHoldUse = false;
+        announcedOmenSkip = false;
+        prevSelectedHotbarSlot = -1;
+    }
+
+    private boolean hasRaidOmen() {
+        try {
+            for (net.minecraft.entity.effect.StatusEffectInstance inst : mc.player.getStatusEffects()) {
+                if (inst == null) continue;
+                net.minecraft.registry.entry.RegistryEntry<net.minecraft.entity.effect.StatusEffect> effEntry = inst.getEffectType();
+                if (effEntry == null || effEntry.value() == null) continue;
+                String key = String.valueOf(effEntry.value().getTranslationKey());
+                if (key.endsWith(".bad_omen") || key.endsWith(".raid_omen")) return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    @Override
+    public void onDeactivate() {
+        // Safety: ensure key is restored when module deactivates.
+        if (forceHoldUse && mc.options != null && mc.options.useKey != null) {
+            mc.options.useKey.setPressed(prevUseKeyPressed);
+        }
+        forceHoldUse = false;
     }
 }
