@@ -323,13 +323,16 @@ public class RaidHelperModule extends Module {
             if (debugLogs.get()) announceClient("Triggered by bossbar 'victory' (strict=" + strictVictoryWithHero.get() + ").");
         }
 
-        if (!hasHeroEffect && !hasRaidBossBar) raidJustFinished = false;
-
         // Raid chaining: if no Raid Omen and no raid bossbar, start drinking to trigger next raid
-        if (chainRaids.get() && !hasRaidOmen && !hasRaidBossBar && !raidJustFinished && !drinking) {
+        if (chainRaids.get() && !hasRaidOmen && !hasRaidBossBar && !hasHeroEffect && !drinking && !raidJustFinished) {
             raidJustFinished = true;
             postRaidTickCooldown = postRaidDelayTicks.get();
-            if (debugLogs.get()) announceClient("Chain raid: no Omen + no bossbar, initiating bottle drink.");
+            if (debugLogs.get()) announceClient("Chain raid: no Omen + no bossbar + no Hero, initiating bottle drink.");
+        }
+
+        // Reset raidJustFinished only when raid is truly over and we're not chaining
+        if (!chainRaids.get() && !hasHeroEffect && !hasRaidBossBar) {
+            raidJustFinished = false;
         }
 
         if (raidJustFinished && !drinking && postRaidTickCooldown-- <= 0) {
