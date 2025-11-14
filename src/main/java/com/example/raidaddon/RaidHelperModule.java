@@ -136,6 +136,18 @@ public class RaidHelperModule extends Module {
         .visible(() -> slotRestoreMode.get() == SlotRestoreMode.Specific)
         .build());
 
+    private final Setting<Boolean> reSwitchAfterIdle = sgGeneral.add(new BoolSetting.Builder()
+        .name("re-switch-after-idle")
+        .description("If the player manually changes slot, wait 10 seconds then switch back to the configured slot.")
+        .defaultValue(false)
+        .build());
+
+    private final Setting<Boolean> chainRaids = sgGeneral.add(new BoolSetting.Builder()
+        .name("chain-raids")
+        .description("Automatically drink Ominous Bottle when no Raid Omen and no raid bossbar (to start another raid).")
+        .defaultValue(false)
+        .build());
+
     public enum SlotRestoreMode {
         Previous,
         Specific,
@@ -163,6 +175,8 @@ public class RaidHelperModule extends Module {
     private boolean prevUseKeyPressed = false;
     private boolean announcedOmenSkip = false;
     private int prevSelectedHotbarSlot = -1;
+    private int idleTicksOffTarget = 0;
+    private int lastExpectedSlot = -1;
 
     public RaidHelperModule() {
         super(Categories.Misc, "Raid Helper", "Assists after raids and enables helpful modules.");
@@ -191,6 +205,8 @@ public class RaidHelperModule extends Module {
         prevUseKeyPressed = false;
         announcedOmenSkip = false;
         prevSelectedHotbarSlot = -1;
+        idleTicksOffTarget = 0;
+        lastExpectedSlot = -1;
     }
 
     @EventHandler
@@ -307,6 +323,13 @@ public class RaidHelperModule extends Module {
 
         if (!hasHeroEffect && !hasRaidBossBar) raidJustFinished = false;
 
+        // Raid chaining: if no Raid Omen and no raid bossbar, start drinking to trigger next raid
+        if (chainRaids.get() && !hasRaidOmen && !hasRaidBossBar && !raidJustFinished && !drinking) {
+            raidJustFinished = true;
+            postRaidTickCooldown = postRaidDelayTicks.get();
+            if (debugLogs.get()) announceClient("Chain raid: no Omen + no bossbar, initiating bottle drink.");
+        }
+
         if (raidJustFinished && !drinking && postRaidTickCooldown-- <= 0) {
             int slot = findOminousBottleHotbarSlot();
             if (slot != -1 && mc.player != null && mc.interactionManager != null) {
@@ -380,6 +403,58 @@ public class RaidHelperModule extends Module {
             }
         }
 
+        // Re-switch timer: if player manually changes slot, wait 10s then switch back
+        if (reSwitchAfterIdle.get() && mc.player != null && mc.player.getInventory() != null) {
+            int targetSlot = -1;
+            switch (slotRestoreMode.get()) {
+                case Previous:
+                    if (prevSelectedHotbarSlot >= 0 && prevSelectedHotbarSlot <= 8) {
+                        targetSlot = prevSelectedHotbarSlot;
+                    }
+                    break;
+                case Specific:
+                    int s = targetHotbarSlot.get() - 1;
+                    if (s >= 0 && s <= 8) {
+                        targetSlot = s;
+                    }
+                    break;
+                case None:
+                    break;
+            }
+            if (targetSlot >= 0) {
+                try {
+                    int currentSlot = mc.player.getInventory().getSelectedSlot();
+                    if (currentSlot != targetSlot) {
+                        idleTicksOffTarget++;
+                        if (idleTicksOffTarget >= 200) { // 10 seconds = 200 ticks
+                            mc.player.getInventory().setSelectedSlot(targetSlot);
+                            idleTicksOffTarget = 0;
+                            if (debugLogs.get()) announceClient("Re-switched to slot " + (targetSlot + 1) + " after 10s idle.");
+                        }
+                    } else {
+                        idleTicksOffTarget = 0;
+                    }
+                } catch (Throwable ignored) {
+                    // Fallback reflection if needed
+                    try {
+                        java.lang.reflect.Field f = mc.player.getInventory().getClass().getDeclaredField("selectedSlot");
+                        f.setAccessible(true);
+                        Object v = f.get(mc.player.getInventory());
+                        if (v instanceof Integer currentSlot && currentSlot != targetSlot) {
+                            idleTicksOffTarget++;
+                            if (idleTicksOffTarget >= 200) {
+                                mc.player.getInventory().setSelectedSlot(targetSlot);
+                                idleTicksOffTarget = 0;
+                                if (debugLogs.get()) announceClient("Re-switched to slot " + (targetSlot + 1) + " after 10s idle.");
+                            }
+                        } else {
+                            idleTicksOffTarget = 0;
+                        }
+                    } catch (Throwable ignored2) {}
+                }
+            }
+        }
+
         if (debugLogs.get() && hadRaidBossBar != hasRaidBossBar) {
             if (hasRaidBossBar) {
                 java.util.List<String> raidTitles = bossBars.stream().map(this::safeTitle).filter(t -> t.toLowerCase().contains("raid")).toList();
@@ -389,6 +464,7 @@ public class RaidHelperModule extends Module {
         }
         hadHeroEffect = hasHeroEffect;
         hadRaidBossBar = hasRaidBossBar;
+        hadRaidOmen = hasRaidOmen;
     }
 
     private int findOminousBottleHotbarSlot() {
