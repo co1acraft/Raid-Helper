@@ -177,6 +177,7 @@ public class RaidHelperModule extends Module {
     private int prevSelectedHotbarSlot = -1;
     private int idleTicksOffTarget = 0;
     private int lastExpectedSlot = -1;
+    private boolean autoEatWasActive = false;
 
     public RaidHelperModule() {
         super(Categories.Misc, "Raid Helper", "Assists after raids and enables helpful modules.");
@@ -207,6 +208,7 @@ public class RaidHelperModule extends Module {
         prevSelectedHotbarSlot = -1;
         idleTicksOffTarget = 0;
         lastExpectedSlot = -1;
+        autoEatWasActive = false;
     }
 
     @EventHandler
@@ -333,6 +335,15 @@ public class RaidHelperModule extends Module {
         if (raidJustFinished && !drinking && postRaidTickCooldown-- <= 0) {
             int slot = findOminousBottleHotbarSlot();
             if (slot != -1 && mc.player != null && mc.interactionManager != null) {
+                // Pause AutoEat if it's active
+                AutoEat ae = Modules.get().get(AutoEat.class);
+                if (ae != null && ae.isActive()) {
+                    autoEatWasActive = true;
+                    ae.toggle();
+                    if (debugLogs.get()) announceClient("Paused AutoEat for bottle drinking.");
+                } else {
+                    autoEatWasActive = false;
+                }
                 // Remember previous selection before switching to the bottle.
                 try {
                     prevSelectedHotbarSlot = mc.player.getInventory().getSelectedSlot();
@@ -548,6 +559,15 @@ public class RaidHelperModule extends Module {
         // Release forced hold if we were holding.
         if (forceHoldUse && mc.options != null && mc.options.useKey != null) {
             mc.options.useKey.setPressed(prevUseKeyPressed);
+        }
+        // Re-enable AutoEat if we paused it
+        if (autoEatWasActive) {
+            AutoEat ae = Modules.get().get(AutoEat.class);
+            if (ae != null && !ae.isActive()) {
+                ae.toggle();
+                if (debugLogs.get()) announceClient("Resumed AutoEat after drinking.");
+            }
+            autoEatWasActive = false;
         }
         // Restore hotbar slot based on user preference (both on success and abort).
         if (mc.player != null && mc.player.getInventory() != null) {
