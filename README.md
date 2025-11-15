@@ -1,4 +1,6 @@
 ## Meteor Raid Addon
+> [!WARNING]
+> A chunk of these features are implemented but just don't work in the intended way. Don't rely on things work i have made this public because it was at a state that just barley "worked" the way i wanted to
 
 [![Build](https://github.com/co1acraft/ad/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/co1acraft/ad/actions/workflows/build.yml)
 
